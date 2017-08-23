@@ -9,7 +9,19 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.provider.OpenableColumns;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.util.Log;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
+import android.widget.Button;
+import android.widget.ImageView;
+import android.widget.ListView;
+import android.widget.ProgressBar;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import org.json.JSONException;
@@ -22,41 +34,159 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 
 public class ShareActivity extends Activity {
+
+    private ListView mFileList;
+    private Button mAddButton;
+    private ProgressBar mProgress;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-//        setContentView(R.layout.activity_share);
+        setContentView(R.layout.activity_share);
 
-        Intent intent = getIntent();
-        String action = intent.getAction();
-        String type = intent.getType();
+        final Intent intent = getIntent();
+        final String action = intent.getAction();
+        final String type = intent.getType();
+
+        mAddButton = (Button) this.findViewById(R.id.bt_share_add);
+        mFileList = (ListView) this.findViewById(R.id.lv_share_files);
+        mProgress = (ProgressBar) this.findViewById(R.id.pb_share_upload);
+
+        // build file list
+        // final ArrayList<String> names = new ArrayList<String>();
+        final ArrayList<Uri> uris = new ArrayList<Uri>();
         if (Intent.ACTION_SEND.equals(action) && type != null) {
-            handleSend(intent);
+            Uri uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+            // names.add(getFileNameFromUri(uri));
+            uris.add(uri);
         } else if (Intent.ACTION_SEND_MULTIPLE.equals(action) && type != null) {
-            handleSendMultiple(intent);
-        }
-    }
-
-    private void handleSend(Intent intent) {
-        Uri uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
-        if (uri != null) {
-            new UploadFileTask().execute(uri);
-        }
-    }
-
-    private void handleSendMultiple(Intent intent) {
-        ArrayList<Uri> uris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
-        if (uris!= null) {
-            for(Uri uri : uris) {
-                new UploadFileTask().execute(uri);
+            ArrayList<Uri> temp = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+            if (temp != null) {
+                for(Uri uri : temp) {
+                    // names.add(getFileNameFromUri(uri));
+                    uris.add(uri);
+                }
             }
+        }
 
+        // set adapter
+        final FileItemAdapter fia = new FileItemAdapter(this, R.layout.share_file_cell, uris);
+        mFileList.setAdapter(fia);
+        mFileList.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                // Toast.makeText(getApplicationContext(), "Click ListItem Number " + position, Toast.LENGTH_LONG).show();
+
+                // do nothing
+
+            }
+        });
+
+        mAddButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                // TODO check that upload is not on UI thread !
+                for(Uri uri : uris) {
+                    new UploadFileTask().execute(uri);
+                }
+            }
+        });
+    }
+
+    private String getFileSizeFromUri(Uri uri) {
+        String result = null;
+        if (uri.getScheme().equals("content")) {
+            Cursor cursor = getContentResolver().query(uri, null, null, null, null);
+            try {
+                if (cursor != null && cursor.moveToFirst()) {
+                    result = cursor.getString(cursor.getColumnIndex(OpenableColumns.SIZE));
+                }
+            } finally {
+                cursor.close();
+            }
+        }
+        if (result == null) {
+            result = uri.getPath();
+            int cut = result.lastIndexOf('/');
+            if (cut != -1) {
+                result = result.substring(cut + 1);
+            }
+        }
+        return result;
+    }
+
+    private String getFileNameFromUri(Uri uri) {
+        String result = null;
+        if (uri.getScheme().equals("content")) {
+            Cursor cursor = getContentResolver().query(uri, null, null, null, null);
+            try {
+                if (cursor != null && cursor.moveToFirst()) {
+                    result = cursor.getString(cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME));
+                }
+            } finally {
+                cursor.close();
+            }
+        }
+        if (result == null) {
+            result = uri.getPath();
+            int cut = result.lastIndexOf('/');
+            if (cut != -1) {
+                result = result.substring(cut + 1);
+            }
+        }
+        return result;
+    }
+
+    // =============================================================================================
+    // FileItemAdapter
+    // =============================================================================================
+    private class FileItemAdapter extends ArrayAdapter<Uri> {
+
+        HashMap<Uri, Integer> mIdMap = new HashMap<Uri, Integer>();
+
+        public FileItemAdapter(Context context, int textViewResourceId, List<Uri> objects) {
+            super(context, textViewResourceId, objects);
+            for (int i = 0; i < objects.size(); ++i) {
+                mIdMap.put(objects.get(i), i);
+            }
+        }
+
+        @Override
+        public long getItemId(int position) {
+            Uri item = getItem(position);
+            return mIdMap.get(item);
+        }
+
+        @Override
+        public boolean hasStableIds() {
+            return true;
+        }
+
+        @NonNull
+        @Override
+        public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
+            // inflate !!
+            LayoutInflater inflater = (LayoutInflater) getApplicationContext().getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+            View row = inflater.inflate(R.layout.share_file_cell, parent, false);
+            TextView desc = (TextView) row.findViewById(R.id.tv_share_cell_description);
+            TextView title = (TextView) row.findViewById(R.id.tv_share_cell_title);
+            ImageView icon = (ImageView) row.findViewById(R.id.iv_share_cell_icon);
+            Uri uri = getItem(position);
+
+            title.setText(getFileNameFromUri(uri));
+            desc.setText(getFileSizeFromUri(uri) + " " + "bytes");
+            return row;
         }
     }
 
+
+    // =============================================================================================
+    // UploadFileTask
+    // =============================================================================================
     private class UploadFileTask extends AsyncTask<Uri, Integer, Boolean> {
 
         @Override
@@ -73,7 +203,7 @@ public class ShareActivity extends Activity {
 
 
             Uri file_uri = aUris[0];
-            String file_path = getFileName(file_uri);
+            String file_path = getFileNameFromUri(file_uri);
 
             SharedPreferences sp = getApplicationContext().getSharedPreferences(getApplicationContext().getString(R.string.preference_file_key), Context.MODE_PRIVATE);
 
@@ -122,7 +252,6 @@ public class ShareActivity extends Activity {
                 out.flush();
                 out.close();
 
-
                 // get server response
                 int response_code = huc.getResponseCode();
                 String response_message = huc.getResponseMessage();
@@ -166,6 +295,7 @@ public class ShareActivity extends Activity {
 
                 }
 
+                /*
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
@@ -173,7 +303,7 @@ public class ShareActivity extends Activity {
                         Toast.makeText(getApplicationContext(), R.string.share_error_title, Toast.LENGTH_LONG);
                     }
                 });
-
+                */
 
             } finally {
                 if(huc != null) {
@@ -188,11 +318,15 @@ public class ShareActivity extends Activity {
             super.onProgressUpdate(values);
             Log.i("", "Wrote " + values[0] + " bytes (total: " + values[1] + " / " + values[2] + ")" );
 
+            final float total = (float)values[1];
+            final float expected = (float)values[2];
+
             // TODO: send progress
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
-
+                    float val = total / expected;
+                    mProgress.setProgress((int)val * 100);
                 }
             });
         }
@@ -201,29 +335,15 @@ public class ShareActivity extends Activity {
         @Override
         protected void onPostExecute(Boolean aResponseCode) {
             super.onPostExecute(aResponseCode);
+
+
+            Toast.makeText(getApplicationContext(),
+                    aResponseCode ? R.string.share_success_title : R.string.share_error_title,
+                    Toast.LENGTH_LONG);
+
         }
 
 
-        private String getFileName(Uri uri) {
-            String result = null;
-            if (uri.getScheme().equals("content")) {
-                Cursor cursor = getContentResolver().query(uri, null, null, null, null);
-                try {
-                    if (cursor != null && cursor.moveToFirst()) {
-                        result = cursor.getString(cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME));
-                    }
-                } finally {
-                    cursor.close();
-                }
-            }
-            if (result == null) {
-                result = uri.getPath();
-                int cut = result.lastIndexOf('/');
-                if (cut != -1) {
-                    result = result.substring(cut + 1);
-                }
-            }
-            return result;
-        }
+
     }
 }

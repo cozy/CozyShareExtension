@@ -2,3 +2,4 @@
 <string name="share_name">Ajouter à Cozy</string>
 <string name="preference_file_key">PREF_FILE_KEY</string>
 <string name="share_error_title">Erreur d\'ajout à Cozy.</string>
+<string name="share_success_title">Ajouté à Cozy !</string>
